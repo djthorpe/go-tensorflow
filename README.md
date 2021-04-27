@@ -95,9 +95,6 @@ done
 echo "Adjusting module paths to '${THIS_MODULE}'"
 TF_SUBSTITUTION="s#\(${TF_MODULE}\)#${THIS_MODULE}/${TF_VENDOR}/\1#"
 find ${TF_VENDOR} -type f -name "*.go" -exec sed -i '' "${TF_SUBSTITUTION}" {} \;
-
-echo "Running tests"
-cd ${BUILD_ROOT} && go test pkg/...
 ```
 
 There are two addition braindead things to do:
@@ -109,7 +106,7 @@ There are two addition braindead things to do:
     cgo in it. This works so far on darwin since I used the homebrew version rather than
     the version I build in `/opt/tensorflow-v2.4.1`
 
-## Running the bindings
+## Testing the bindings
 
 Here's a simple program to verify calling tensorflow library to get version, using the
 forked version of tensorflow
@@ -118,12 +115,17 @@ forked version of tensorflow
 package tensorflow
 
 import (
-	tf "github.com/djthorpe/go-tensorflow/tensorflow/github.com/tensorflow/tensorflow/tensorflow/go"
+  tf "github.com/djthorpe/go-tensorflow/tensorflow/github.com/tensorflow/tensorflow/tensorflow/go"
 )
 
 func main() {
-	fmt.Println("version=",tf.Version())
+  fmt.Println("version=",tf.Version())
 }
 ```
 
-If that works, you are up and running.
+I get a warning `ld: warning: dylib (/usr/local/lib/libtensorflow.so) was built for newer macOS version (11.1) than being linked (10.15)` due to the way the homebrew library is likely installed (and the fact I didn't update my MacOS yet). However, if this prints out the version number, you are up and running. I added in some tests for other things,
+
+```bash
+echo "Running tests"
+cd ${BUILD_ROOT} && go test ./pkg/tensorflow/...
+```

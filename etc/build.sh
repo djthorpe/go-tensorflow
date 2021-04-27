@@ -7,8 +7,8 @@ THIS_MODULE=`head -1 ${BASE_DIR}/go.mod | cut -d ' ' -f 2`
 ###############################################################################
 
 TF_VERSION=2.4.1
-TF_SOURCE="${TF_TEMP}/tensorflow-2.4.1"
 TF_PREFIX="/opt"
+TF_SOURCE="${TF_TEMP}/tensorflow-${TF_VERSION}"
 TF_DEST="${TF_PREFIX}/tensorflow-${TF_VERSION}"
 TF_VENDOR="tensorflow"
 TF_MODULE="github.com/tensorflow/tensorflow/tensorflow"
@@ -32,8 +32,10 @@ tar -C "${TF_TEMP}" -zxf "${TF_TEMP}/v${TF_VERSION}.tar.gz" && rm "${TF_TEMP}/v$
 
 # Make vendor folder
 echo "Vendoring go bindings to '${TF_VENDOR}'"
-install -d "${BASE_DIR}/${TF_VENDOR}/${TF_MODULE}"
+install -d "${BASE_DIR}/${TF_VENDOR}/${TF_MODULE}/cc/saved_model"
 cp -r "${TF_SOURCE}/tensorflow/go" "${BASE_DIR}/${TF_VENDOR}/${TF_MODULE}"
+cp -r "${TF_SOURCE}/tensorflow/cc/saved_model/testdata" "${BASE_DIR}/${TF_VENDOR}/${TF_MODULE}/cc/saved_model"
+
 
 # Protobuffers
 echo "Compiling protobuf to go bindings in '${TF_VENDOR}'"
@@ -48,12 +50,14 @@ done
 
 # Remove the temporary folder
 echo "Cleaning up '${TF_TEMP}'"
-rm -fr "${TF_TEMP}"
+#rm -fr "${TF_TEMP}"
 
 # Adjust paths
 echo "Adjusting module paths to '${THIS_MODULE}'"
 TF_SUBSTITUTION="s#\(${TF_MODULE}\)#${THIS_MODULE}/${TF_VENDOR}/\1#"
 find ${TF_VENDOR} -type f -name "*.go" -exec sed -i '' "${TF_SUBSTITUTION}" {} \;
 
+# Running tests
 echo "Running tests"
-cd ${BUILD_ROOT} && go test pkg/...
+go test "./${TF_VENDOR}/${TF_MODULE}/go"
+go test "./pkg/tensorflow"
