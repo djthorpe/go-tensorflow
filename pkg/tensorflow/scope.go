@@ -46,7 +46,11 @@ func (this *Scope) Finalize() (*Graph, error) {
 	if graph, err := (*op.Scope)(this).Finalize(); err != nil {
 		return nil, err
 	} else {
+<<<<<<< HEAD
 		return &Graph{graph}, nil
+=======
+		return (*Graph)(graph), nil
+>>>>>>> 15feaee8721bcc390fb6422c018f8fc9cd60c9aa
 	}
 }
 
