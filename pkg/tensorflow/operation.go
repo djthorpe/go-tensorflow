@@ -3,6 +3,7 @@ package tensorflow
 import (
 	"fmt"
 
+	// Modules
 	tf "github.com/djthorpe/go-tensorflow/tensorflow/github.com/tensorflow/tensorflow/tensorflow/go"
 )
 

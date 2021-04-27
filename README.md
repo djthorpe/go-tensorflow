@@ -12,51 +12,118 @@ Compilation on a Raspberry Pi 4 (4GB) was not successful, so may require cross-c
 on a machine with more memory. In order to compile, you have to start with the C API, then
 the Go bindings.
 
+There are a few things not working with the environment I mention above:
+
+  * For Darwin, Tensorflow 2.4.1 is probably best installed using homebrew
+    (simple as `brew install tensorflow`) which places it under `/usr/local`. However, this
+    installs a dynamic library and for go code distribution, a static library would
+    be a better choice so as to create a single distributable binary. Contrarily, there's a lot
+    of variations on how to build Tensorflow (with GPU support, etc) so dynamic linking could
+    make sense;
+  * For go 1.16 with module support, you cannot use `go get` as the protocol buffers are not 
+    compiled and so dependencies are not satisfied. This is documented [here](https://github.com/tensorflow/tensorflow/issues/43847) amongst other places.
+
+Not really approached any of the other problems yet.
+
 ## Bulding the C API for Tensorflow
 
-Assuming you have [Bazel 3.1.0](https://docs.bazel.build/versions/3.1.0/install.html) installed (not sure if any other version will work, but latest one doesn't):
+Before getting to the go part, you need to install the C API. Assuming you have [Bazel 3.1.0](https://docs.bazel.build/versions/3.1.0/install.html) installed (not sure if any other version will work, but latest one doesn't):
 
-```
+```bash
+TF_TEMP=`mktemp -t go-tensorflow`
 TF_VERSION=2.4.1
-TF_PREFIX=/opt
-wget https://github.com/tensorflow/tensorflow/archive/refs/tags/v${TF_VERSION}.tar.gz
-tar -zxvf v${TF_VERSION}.tar.gz && rm v${TF_VERSION}.tar.gz
+TF_SOURCE="${TF_TEMP}/tensorflow-2.4.1"
+TF_PREFIX="/opt"
+TF_DEST="${TF_PREFIX}/tensorflow-${TF_VERSION}"
+
+# Download and extract the source code
+echo "Downloading 'v${TF_VERSION}.tar.gz'"
+wget --directory-prefix "${TF_TEMP}" https://github.com/tensorflow/tensorflow/archive/refs/tags/v${TF_VERSION}.tar.gz
+
+echo "Extracting to '${TF_TEMP}'"
+tar -C "${TF_TEMP}" -zxf "${TF_TEMP}/v${TF_VERSION}.tar.gz" && rm "${TF_TEMP}/v${TF_VERSION}.tar.gz"
+
+# Build libraries
 cd tensorflow-${TF_VERSION}
 bazel build --config=monolithic -c opt //tensorflow/tools/lib_package:libtensorflow
-install -d ${TF_PREFIX}/tensorflow-${TF_VERSION}
-tar -C ${TF_PREFIX}/tensorflow-${TF_VERSION} -zxf bazel-bin/tensorflow/tools/lib_package/libtensorflow.tar.gz
-```
 
-This theoretically creates static libraries as opposed to dynamic ones, which is more
-suitable for a golang environment for self-contained binaries.
+# Install libraries
+echo "Installing to '${TF_DEST}'"
+install -d "${TF_DEST}"
+tar -C "${TF_DEST}" -zxf bazel-bin/tensorflow/tools/lib_package/libtensorflow.tar.gz
 
-After this, create a `pkgconfig` file:
-
-```
-install -d ${TF_PREFIX}/tensorflow-${TF_VERSION}/lib/pkgconfig
-tee ${TF_PREFIX}/tensorflow-${TF_VERSION}/lib/pkgconfig/libtensorflow.pc <<EOF >/dev/null
+# Make pkgconfig
+install -d "${TF_DEST}/lib/pkgconfig"
+tee "${TF_DEST}/lib/pkgconfig/tensorflow.pc" <<EOF >/dev/null
 Name: tensorflow
 Description: Tensorflow C Library
 Version: ${TF_VERSION}
-Cflags: -I${TF_PREFIX}/tensorflow-${TF_VERSION}/include
-Libs: -L${TF_PREFIX}/tensorflow-${TF_VERSION}/lib -ltensorflow -lstdc++
+Cflags: -I${TF_DEST}/include
+Libs: -L${TF_DEST}/lib -ltensorflow.${TF_VERSION} -lstdc++
 EOF
 ```
 
+This theoretically creates static libraries as opposed to dynamic ones, which is more
+suitable for a golang environment for self-contained binaries. However, it may not work
+yet, so some work is still needed.
+
 ## Go bindings
 
-Generate the protocol buffer interfaces:
+As mentioned above, the go module (under `github.com/tensorflow/tensorflow/tensorflow/go`)
+do not work with modules switched on, the braindead option is simply to copy it:
 
+```bash
+TF_VENDOR="tensorflow"
+TF_MODULE="github.com/tensorflow/tensorflow/tensorflow"
+
+echo "Vendoring go bindings to '${TF_VENDOR}'"
+install -d "${BASE_DIR}/${TF_VENDOR}/${TF_MODULE}"
+cp -r "${TF_SOURCE}/tensorflow/go" "${BASE_DIR}/${TF_VENDOR}/${TF_MODULE}"
+
+# Protobuf compilation
+echo "Compiling protobuf to go bindings in '${TF_VENDOR}'"
+go get github.com/golang/protobuf/proto
+go get github.com/golang/protobuf/protoc-gen-go
+
+for FILE in ${TF_SOURCE}/tensorflow/core/framework/*.proto \
+    ${TF_SOURCE}/tensorflow/core/protobuf/*.proto \
+    ${TF_SOURCE}/tensorflow/stream_executor/*.proto; do
+  protoc -I "${TF_SOURCE}" --go_out="${TF_VENDOR}" "${FILE}"
+done
+
+# Adjust paths
+echo "Adjusting module paths to '${THIS_MODULE}'"
+TF_SUBSTITUTION="s#\(${TF_MODULE}\)#${THIS_MODULE}/${TF_VENDOR}/\1#"
+find ${TF_VENDOR} -type f -name "*.go" -exec sed -i '' "${TF_SUBSTITUTION}" {} \;
+
+echo "Running tests"
+cd ${BUILD_ROOT} && go test pkg/...
 ```
-etc/generate.sh
-``
 
+There are two addition braindead things to do:
 
-You should then be able to run the following command, which prints out version number:
+  * There's also a 'wrapper' generation (I think, to define the operations in go from
+    the API) that needs to be done, but that part seems to have someone updating it.
+    The wrapper generation is in `github.com/tensorflow/tensorflow/tensorflow/go/genops`
+  * Adding a `pkgconfig` line (`#cgo pkg-config tensorflow`) in any file which has
+    cgo in it. This works so far on darwin since I used the homebrew version rather than
+    the version I build in `/opt/tensorflow-v2.4.1`
 
+## Running the bindings
+
+Here's a simple program to verify calling tensorflow library to get version, using the
+forked version of tensorflow
+
+```go
+package tensorflow
+
+import (
+	tf "github.com/djthorpe/go-tensorflow/tensorflow/github.com/tensorflow/tensorflow/tensorflow/go"
+)
+
+func main() {
+	fmt.Println("version=",tf.Version())
+}
 ```
-PKG_CONFIG_PATH=${TF_PREFIX}/tensorflow-${TF_VERSION}/lib/pkgconfig go run ./cmd/version
-```
 
-You will need to do some additional work to get the go bindings up and running.
-
+If that works, you are up and running.

@@ -11,13 +11,6 @@ import (
 
 type Tensor tf.Tensor
 
-/*
-type Tensor struct {
-	Root *op.Scope
-	*Scope
-	tf.Output
-}
-*/
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 

@@ -6,7 +6,7 @@ import (
 
 	tf "github.com/djthorpe/go-tensorflow/tensorflow/github.com/tensorflow/tensorflow/tensorflow/go"
 	core "github.com/djthorpe/go-tensorflow/tensorflow/github.com/tensorflow/tensorflow/tensorflow/go/core/protobuf/for_core_protos_go_proto"
-	"google.golang.org/protobuf/proto"
+	proto "google.golang.org/protobuf/proto"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
